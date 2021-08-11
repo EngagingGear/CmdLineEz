@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "SampleApp": {
+      "commandName": "Project",
+      "commandLineArgs": "/cap /f test.txt test1 test2 test3"
+    }
+  }
+}
