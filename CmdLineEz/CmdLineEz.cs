@@ -171,8 +171,9 @@ namespace CmdLineEzNs
         /// <returns></returns>
         public bool? FlagVal(string name, bool? defaultValue = null)
         {
-            if (_paramsIndexed == null || 
-                !_paramsIndexed.ContainsKey(name) ||
+            if (_paramsIndexed == null)
+                throw new ArgumentException("Please run the CmdLineEz.Process(args) function first.");
+            if (!_paramsIndexed.ContainsKey(name) ||
                 _paramsIndexed[name].Type != CmdLineParamType.Flag)
                 throw new ArgumentException($"Parameter {name} not defined or is not a flag value");
             if (_values.ContainsKey(name))
@@ -189,8 +190,9 @@ namespace CmdLineEzNs
         /// <returns></returns>
         public string ParamVal(string name)
         {
-            if (_paramsIndexed == null ||
-                !_paramsIndexed.ContainsKey(name) ||
+            if (_paramsIndexed == null)
+                throw new ArgumentException("Please run the CmdLineEz.Process(args) function first.");
+            if (!_paramsIndexed.ContainsKey(name) ||
                 _paramsIndexed[name].Type != CmdLineParamType.Param)
                 throw new ArgumentException($"Parameter {name} not defined or is not a param value");
             if (_values.ContainsKey(name))
@@ -207,8 +209,9 @@ namespace CmdLineEzNs
         /// <returns></returns>
         public List<string> ParamListVal(string name)
         {
-            if (_paramsIndexed == null ||
-                !_paramsIndexed.ContainsKey(name) ||
+            if (_paramsIndexed == null)
+                throw new ArgumentException("Please run the CmdLineEz.Process(args) function first.");
+            if (!_paramsIndexed.ContainsKey(name) ||
                 _paramsIndexed[name].Type != CmdLineParamType.ParamList)
                 throw new ArgumentException($"Parameter {name} not defined or is not a param list value");
             if (_values.ContainsKey(name))
@@ -223,7 +226,9 @@ namespace CmdLineEzNs
         /// <returns></returns>
         public List<string> TrailingVal()
         {
-            return _trailingList;
+            if (_paramsIndexed == null)
+                throw new ArgumentException("Please run the CmdLineEz.Process(args) function first.");
+            return _trailingList ?? new List<string>();
         }
 
         /// <summary>
