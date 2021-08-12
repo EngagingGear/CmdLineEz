@@ -169,7 +169,7 @@ namespace CmdLineEzNs
         /// </summary>
         /// <param name="name"></param>
         /// <returns></returns>
-        public bool? FlagVal(string name)
+        public bool? FlagVal(string name, bool? defaultValue = null)
         {
             if (_paramsIndexed == null || 
                 !_paramsIndexed.ContainsKey(name) ||
@@ -178,7 +178,7 @@ namespace CmdLineEzNs
             if (_values.ContainsKey(name))
                 return _values[name] as bool?;
             else
-                return null;
+                return defaultValue;
         }
 
         /// <summary>
