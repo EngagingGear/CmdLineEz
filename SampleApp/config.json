@@ -1,0 +1,12 @@
+{
+  "Flag1": true,
+  "flag2": false,
+  "pAram1": "test value 1",
+  "param2": "test value 2",
+  "Param3": "test value 3",
+  "ParamList1": [
+    "list value 1",
+    "list value 2",
+    "lust value 3"
+  ]
+}

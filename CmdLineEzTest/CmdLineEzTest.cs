@@ -8,6 +8,21 @@ namespace CmdLinEzTestNs
 {
     public class CmdLineEzTest
     {
+        private static readonly string TestJson =
+            @$"{{
+	            ""Flag1"": true,
+	            ""flag2"": false,
+	            ""pAram1"": ""configuration file param value 1"",
+	            ""param2"": ""configuration file param value 2"",
+	            ""Param3"": ""configuration file param value 3"",
+	            ""ParamList1"": [
+		            ""configuration file list value 1"",
+		            ""configuration file list value 2"",
+		            ""configuration file list value 3""
+	            ]
+            }}";
+
+
         [Fact]
         public void SimpleFlag()
         {
@@ -789,6 +804,246 @@ namespace CmdLinEzTestNs
             Assert.True(hasException);
         }
 
+        [Fact]
+        public void DefaultFlag()
+        {
+            const bool expectedValue = true;
+            const string parameterName = "test";
+
+            var cmdLine = new CmdLineEz()
+                .Flag(parameterName, defaultValue: expectedValue);
+            cmdLine.Process(new string[0]);
+
+            Assert.Equal(expectedValue, cmdLine.FlagVal(parameterName));
+        }
+
+
+        [Fact]
+        public void DefaultParameter()
+        {
+            const string expectedValue = "default value";
+            const string parameterName = "test";
+
+            var cmdLine = new CmdLineEz()
+                .Param(parameterName, defaultValue: expectedValue);
+            cmdLine.Process(new string[0]);
+
+            Assert.Equal(expectedValue, cmdLine.ParamVal(parameterName));
+        }
+
+        [Fact]
+        public void DefaultParameterList()
+        {
+            var expectedValues = new List<string> {"default value 1", "default value 2", "default value 3"};
+            const string parameterName = "test";
+
+            var cmdLine = new CmdLineEz()
+                .ParamList(parameterName, defaultValues: expectedValues);
+            cmdLine.Process(new string[0]);
+
+            Assert.True(CompareList(expectedValues, cmdLine.ParamListVal(parameterName)));
+        }
+
+        [Fact]
+        public void DefaultConfiguration()
+        {
+            const string paramList1Val1 = "default value 1";
+            const string paramList1Val2 = "default value 2";
+            const string paramList1Val3 = "default value 3";
+
+            const string configurationParameterName = "config";
+
+            var defaultConfiguration = new
+            {
+                Flag1 = true,
+                Flag2 = false,
+                Param1 = "test value 1",
+                Param2 = "test value 2",
+                ParamList1 = new List<string> {paramList1Val1, paramList1Val2, paramList1Val3}
+            };
+
+            var cmdLine = new CmdLineEz()
+                .Config(configurationParameterName, defaultConfiguration)
+                .Flag("flag1")
+                .Flag("flag2")
+                .Param("param1")
+                .Param("param2")
+                .ParamList("paramlist1");
+            cmdLine.Process(new string[0]);
+
+            Assert.Equal(defaultConfiguration.Flag1, cmdLine.FlagVal("flag1"));
+            Assert.Equal(defaultConfiguration.Flag2, cmdLine.FlagVal("flag2"));
+            Assert.Equal(defaultConfiguration.Param1, cmdLine.ParamVal("param1"));
+            Assert.Equal(defaultConfiguration.Param2, cmdLine.ParamVal("param2"));
+            Assert.True(CompareList(defaultConfiguration.ParamList1, cmdLine.ParamListVal("paramlist1")));
+        }
+
+        [Fact]
+        public void PassedFlagHasPrecedenceOverDefaultFlag()
+        {
+            const bool expectedValue = true;
+            const bool defaultValue = false;
+            const string parameterName = "test";
+
+            var cmdLine = new CmdLineEz()
+                .Flag(parameterName, defaultValue: defaultValue);
+            cmdLine.Process(new[] { "/test" });
+
+            Assert.Equal(expectedValue, cmdLine.FlagVal(parameterName));
+        }
+
+        [Fact]
+        public void PassedParameterHasPrecedenceOverDefaultParameter()
+        {
+            const string expectedValue = "test value";
+            const string defaultValue = "default value";
+            const string parameterName = "test";
+
+            var cmdLine = new CmdLineEz()
+                .Param(parameterName, defaultValue: defaultValue);
+            cmdLine.Process(new[] { "/test", expectedValue });
+
+            Assert.Equal(expectedValue, cmdLine.ParamVal(parameterName));
+        }
+
+        [Fact]
+        public void PassedParameterListHasPrecedenceOverDefaultParameterList()
+        {
+            var defaultList = new List<string>() { "default value 1", "default value 2" };
+
+            const string expectedValue1 = "expected value 1";
+            const string expectedValue2 = "expected value 2";
+            const string expectedValue3 = "expected value 3";
+
+            var expectedList = new List<string> { expectedValue1, expectedValue2, expectedValue3 };
+
+            const string parameterName = "test";
+
+            var cmdLine = new CmdLineEz()
+                .ParamList(parameterName, defaultValues: defaultList);
+            cmdLine.Process(new[] { "/test", expectedValue1, expectedValue2, expectedValue3 });
+
+            Assert.True(CompareList(expectedList, cmdLine.ParamListVal(parameterName)));
+        }
+
+        [Fact]
+        public void DefaultValueHasPrecedenceOverDefaultConfigurationObject()
+        {
+            const string paramList1Val1 = "list value 1";
+            const string paramList1Val2 = "list value 2";
+            const string paramList1Val3 = "list value 3";
+
+            const string configurationParameterName = "config";
+
+            var defaultConfiguration = new
+            {
+                Flag1 = true,
+                Flag2 = false,
+                Param1 = "test value 1",
+                Param2 = "test value 2",
+                ParamList1 = new List<string> { paramList1Val1, paramList1Val2, paramList1Val3 }
+            };
+
+            var defaultParameterList = new List<string>() {"default list value 1", "default list value 2"};
+            var cmdLine = new CmdLineEz()
+                .Config(configurationParameterName, defaultConfiguration)
+                .Flag("flag1", defaultValue: false)
+                .Flag("flag2", defaultValue: true)
+                .Param("param1", defaultValue: "default value 1")
+                .Param("param2", defaultValue: "default value 2")
+                .Param("param3")
+                .ParamList("paramlist1", defaultValues: defaultParameterList);
+            cmdLine.Process(new string[0]);
+
+            Assert.Equal(false, cmdLine.FlagVal("flag1"));
+            Assert.Equal(true, cmdLine.FlagVal("flag2"));
+            Assert.Equal("default value 1", cmdLine.ParamVal("param1"));
+            Assert.Equal("default value 2", cmdLine.ParamVal("param2"));
+            Assert.True(CompareList(defaultParameterList, cmdLine.ParamListVal("paramlist1")));
+        }
+
+        [Fact]
+        public void ConfigurationFileHasPrecedenceOverDefaultConfigurationObject()
+        {
+            //this values provided by test json
+            const bool configurationFileFlag1 = true;
+            const bool configurationFileFlag2 = false;
+            const string configurationFileParam1 = "configuration file param value 1";
+            const string configurationFileParam2 = "configuration file param value 2";
+            const string configurationFileParam3 = "configuration file param value 3";
+            const string configurationFileListValue1 = "configuration file list value 1";
+            const string configurationFileListValue2 = "configuration file list value 2";
+            const string configurationFileListValue3 = "configuration file list value 3";
+            var configurationFileParameterList = new List<string>
+                {configurationFileListValue1, configurationFileListValue2, configurationFileListValue3};
+
+            const string defaultParamListValue1 = "default list value 1";
+            const string defaultParamListValue2 = "default list value 2";
+            const string defaultParamListValue3 = "default list value 3";
+
+            const string configurationParameterName = "config";
+
+            var defaultConfiguration = new
+            {
+                Flag1 = true,
+                Flag2 = false,
+                Param1 = "configuration object parameter value 1",
+                Param2 = "configuration object parameter value 2",
+                Param4 = "configuration object parameter value 4",
+                Param5 = "configuration object parameter value 5",
+                ParamList1 = new List<string> { defaultParamListValue1, defaultParamListValue2, defaultParamListValue3 }
+            };
+
+            var cmdLine = new CmdLineEzForTest()
+                .Config(configurationParameterName, defaultConfiguration)
+                .Flag("flag1", defaultValue: false)
+                .Flag("flag2", defaultValue: true)
+                .Flag("flag3", defaultValue: true)
+                .Param("param1", defaultValue: "default value 1")
+                .Param("param2", defaultValue: "default value 2")
+                .Param("param3")
+                .Param("param4", defaultValue: "default value 4")
+                .Param("param5")
+                .ParamList("paramlist1", defaultValues: new List<string>() {"default list value 1", "default list value 2"});
+            
+            cmdLine.Process(new[] {"/config", "testfile.json", "/param2", "command line parameter value 2"});
+
+            //flag1 defined in configuration file so we expect it
+            //as configuration file has precedence over default object and parameter defaults
+            Assert.Equal(configurationFileFlag1, cmdLine.FlagVal("flag1"));
+
+            //flag2 defined in configuration file so we expect it
+            //as configuration file has precedence over default object and parameter defaults
+            Assert.Equal(configurationFileFlag2, cmdLine.FlagVal("flag2"));
+
+            //flag3 was only defined as parameter default so we expect it
+            Assert.Equal(true, cmdLine.FlagVal("flag3"));
+
+            //param1 defined in configuration file so we expect it
+            //as configuration file has precedence over default object and parameter defaults
+            Assert.Equal(configurationFileParam1, cmdLine.ParamVal("param1"));
+
+            //param2 defined in command line so we expect it
+            //as command line parameter value has precedence over all other parameter values
+            Assert.Equal("command line parameter value 2", cmdLine.ParamVal("param2"));
+
+            //param3 defined in configuration file so we expect it
+            //as configuration file has precedence over default object and parameter defaults
+            Assert.Equal(configurationFileParam3, cmdLine.ParamVal("param3"));
+
+            //param4 defined both in default object and parameter defaults so we expect parameter defaults
+            //as it has precedence over default object
+            Assert.Equal("default value 4", cmdLine.ParamVal("param4"));
+
+            //param5 defined both only in default object so we expect it
+            //as it has precedence over default object
+            Assert.Equal(defaultConfiguration.Param5, cmdLine.ParamVal("param5"));
+
+
+            Assert.True(CompareList(configurationFileParameterList, cmdLine.ParamListVal("paramlist1")));
+        }
+
+
         // Utilities
         private bool CompareList(List<string> l1, params string[] compareTo)
         {
@@ -805,5 +1060,12 @@ namespace CmdLinEzTestNs
             return true;
         }
 
+        public class CmdLineEzForTest : CmdLineEz
+        {
+            protected override string OpenFileAsText(string path)
+            {
+                return TestJson;
+            }
+        }
     }
 }
