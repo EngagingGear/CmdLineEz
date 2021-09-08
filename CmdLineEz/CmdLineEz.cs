@@ -1,6 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Dynamic;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 // ReSharper disable UnusedMember.Global
 // ReSharper disable once CheckNamespace
 
@@ -33,7 +37,8 @@ namespace CmdLineEzNs
         // ReSharper disable once EmptyConstructor
         public CmdLineEz()
         {
-
+            _values = new Dictionary<string, object>();
+            _defaultConfigurationValues = new Dictionary<string, object>();
         }
 
         /// <summary>
@@ -46,14 +51,78 @@ namespace CmdLineEzNs
         {
             if (_params == null)
                 throw new ArgumentException("No parameter specification loaded.");
-            _values = new();
+            
             _paramsIndexed = new();
             foreach (var param in _params)
                 _paramsIndexed[param.Name] = param;
 
+            //if configuration file parameter was specified then updated configuration values from that file
+            IDictionary<string, object> fileConfigurationValues = new Dictionary<string, object>();
+            if (!string.IsNullOrWhiteSpace(_configurationFileNameParameter))
+            {
+                var argsList = args.ToList();
+                var parameterIndex = argsList.FindIndex(i => 
+                    (i.StartsWith("/") || i.StartsWith("--") || i.StartsWith("-"))
+                    &&
+                    i.EndsWith(_configurationFileNameParameter, StringComparison.OrdinalIgnoreCase));
+                if (parameterIndex >= 0 && (parameterIndex + 1) < args.Length)
+                {
+                    var fileName = args[parameterIndex + 1];
+                    var deserializedValues = (IDictionary<string, object>)JsonSerializer.Deserialize<ExpandoObject>(OpenFileAsText(fileName));
+                    foreach (var deserializedItem in deserializedValues)
+                    {
+                        if (deserializedItem.Value is not JsonElement jsonElement) continue;
+                        object obj = jsonElement.ValueKind switch
+                        {
+                            JsonValueKind.Array => jsonElement.EnumerateArray().Select(o => o.ToString()).ToList(),
+                            JsonValueKind.False => false,
+                            JsonValueKind.True => true,
+                            JsonValueKind.String => jsonElement.GetString(),
+                            _ => jsonElement.GetRawText()
+                        };
+                        fileConfigurationValues[deserializedItem.Key.ToLower()] = obj;
+                    }
+                    argsList.RemoveAt(parameterIndex + 1);
+                    argsList.RemoveAt(parameterIndex);
+                    args = argsList.ToArray();
+                }
+            }
+
+            if (_defaultConfigurationValues?.Count > 0 || fileConfigurationValues?.Count > 0)
+            {
+                foreach (var cmdLineParam in _params)
+                {
+                    var name = cmdLineParam.Name.ToLower();
+                    //if values are defined in configuration file then they have priority over default values
+                    if (fileConfigurationValues.ContainsKey(name) && fileConfigurationValues[name] != null)
+                    {
+                        _values[cmdLineParam.Name] = cmdLineParam.Type switch
+                        {
+                            CmdLineParamType.Flag => fileConfigurationValues[name],
+                            CmdLineParamType.Param => fileConfigurationValues[name],
+                            CmdLineParamType.ParamList => ((IEnumerable<string>)fileConfigurationValues[name]).ToList(),
+                            _ => throw new ArgumentOutOfRangeException($"Not expected parameter type: {cmdLineParam.Type}")
+                        };
+                    } else if(_defaultConfigurationValues?.Count > 0 
+                              && _defaultConfigurationValues.ContainsKey(name) 
+                              && _defaultConfigurationValues[name] != null 
+                              && !_values.ContainsKey(name))
+                    {
+                        _values[cmdLineParam.Name] = cmdLineParam.Type switch
+                        {
+                            CmdLineParamType.Flag => _defaultConfigurationValues[name],
+                            CmdLineParamType.Param => _defaultConfigurationValues[name],
+                            CmdLineParamType.ParamList => ((IEnumerable<string>)_defaultConfigurationValues[name])
+                                .ToList(),
+                            _ => throw new ArgumentOutOfRangeException($"Not expected parameter type: {cmdLineParam.Type}")
+                        };
+                    }
+                }
+            }
+
             var requiredParams = new HashSet<string>(_params.Where(p => p.Required).Select(p => p.Name));
             
-            for (int paramNum = 0; paramNum < args.Length; paramNum++)
+            for (var paramNum = 0; paramNum < args.Length; paramNum++)
             {
                 var param = args[paramNum];
                 if (param.StartsWith("/"))
@@ -74,14 +143,17 @@ namespace CmdLineEzNs
                     break;
                 }
 
+
                 List<CmdLineParam> cmdLineParamList;
                 if (_ignoreCase)
                     cmdLineParamList = _params.Where(p => p.Name.ToLower().StartsWith(param.ToLower())).ToList();
                 else
                     cmdLineParamList = _params.Where(p => p.Name.StartsWith(param)).ToList();
-                if (! cmdLineParamList.Any())
+                
+                if (!cmdLineParamList.Any())
                     throw new ArgumentException($"Invalid parameter {param}");
-                else if (cmdLineParamList.Count > 1)
+                
+                if (cmdLineParamList.Count > 1)
                 {
                     // If we have an ambiguous prefix, check if one parameter matches in full.
                     // For example, if we have two parameters defined /test, /test1 if the user
@@ -106,16 +178,12 @@ namespace CmdLineEzNs
                 switch (cmdParam.Type)
                 {
                     case CmdLineParamType.Flag:
-                        if (_values.ContainsKey(cmdParam.Name))
-                            throw new ArgumentException($"Duplicate parameter {cmdParam.Name}");
                         if(cmdParam.Store != null)
                             cmdParam.Store.Invoke(cmdParam.Name, (bool?) true);
                         else
                             _values[cmdParam.Name] = (bool?)true;
                         break;
                     case CmdLineParamType.Param:
-                        if (_values.ContainsKey(cmdParam.Name))
-                            throw new ArgumentException($"Duplicate parameter {cmdParam.Name}");
                         paramNum++;
                         if (paramNum < args.Length)
                         {
@@ -130,8 +198,6 @@ namespace CmdLineEzNs
                         }
                         break;
                     case CmdLineParamType.ParamList:
-                        if (_values.ContainsKey(cmdParam.Name))
-                            throw new ArgumentException($"Duplicate parameter {cmdParam.Name}");
                         paramNum++;
                         if (paramNum < args.Length)
                         {
@@ -232,14 +298,43 @@ namespace CmdLineEzNs
         }
 
         /// <summary>
+        /// Specifies configuration file that contains parameter values
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="defaultConfig"></param>
+        /// <returns></returns>
+        public CmdLineEz Config(string name, object defaultConfig = null)
+        {
+            _params ??= new List<CmdLineParam>();
+            _configurationFileNameParameter = name;
+            _defaultConfigurationValues.Clear();
+            if (defaultConfig is ExpandoObject config)
+            {
+                foreach (var (key, value) in config)
+                {
+                    _defaultConfigurationValues.Add(key.ToLower(), value);
+                }
+            } else if (defaultConfig != null)
+            {
+                foreach (PropertyDescriptor propertyDescriptor in TypeDescriptor.GetProperties(defaultConfig.GetType()))
+                {
+                    _defaultConfigurationValues.Add(propertyDescriptor.Name.ToLower(), propertyDescriptor.GetValue(defaultConfig));
+                }
+            }
+
+            return this;
+        }
+
+        /// <summary>
         /// Specify a flag parameter, of given name, and optionally an action function called
         /// when it is found. If no action function you can obtain its value from FlagVal(name) function.
         /// Note this returns this to allow chaining of these specifications.
         /// </summary>
         /// <param name="name"></param>
         /// <param name="store"></param>
+        /// <param name="defaultValue"></param>
         /// <returns></returns>
-        public CmdLineEz Flag(string name, Action<string, bool> store = null)
+        public CmdLineEz Flag(string name, Action<string, bool> store = null, bool? defaultValue = null)
         {
             _params ??= new List<CmdLineParam>();
             if(_params.Any(p => p.Name == name))
@@ -254,6 +349,10 @@ namespace CmdLineEzNs
                     Required = false,
                     Store = fn,
                 });
+            if (defaultValue != null)
+            {
+                _values[name] = defaultValue;
+            }
             return this;
         }
 
@@ -264,8 +363,9 @@ namespace CmdLineEzNs
         /// </summary>
         /// <param name="name"></param>
         /// <param name="store"></param>
+        /// <param name="defaultValue"></param>
         /// <returns></returns>
-        public CmdLineEz Param(string name, Action<string, string> store = null)
+        public CmdLineEz Param(string name, Action<string, string> store = null, string defaultValue = null)
         {
             _params ??= new List<CmdLineParam>();
             if (_params.Any(p => p.Name == name))
@@ -280,6 +380,11 @@ namespace CmdLineEzNs
                 Required = false,
                 Store = fn,
             });
+            if (!string.IsNullOrWhiteSpace(defaultValue))
+            {
+                _values[name] = defaultValue;
+            }
+
             return this;
         }
 
@@ -290,8 +395,9 @@ namespace CmdLineEzNs
         /// </summary>
         /// <param name="name"></param>
         /// <param name="store"></param>
+        /// <param name="defaultValues"></param>
         /// <returns></returns>
-        public CmdLineEz ParamList(string name, Action<string, List<string>> store = null)
+        public CmdLineEz ParamList(string name, Action<string, List<string>> store = null, List<string> defaultValues = null)
         {
             _params ??= new List<CmdLineParam>();
             if (_params.Any(p => p.Name == name))
@@ -306,6 +412,12 @@ namespace CmdLineEzNs
                 Required = false,
                 Store = fn,
             });
+
+            if (defaultValues?.Count > 0)
+            {
+                _values[name] = defaultValues;
+            }
+
             return this;
         }
 
@@ -389,6 +501,12 @@ namespace CmdLineEzNs
             return this;
         }
 
+        protected virtual string OpenFileAsText(string path)
+        {
+            return File.ReadAllText(path);
+        }
+
+
         private enum CmdLineParamType { Flag, Param, ParamList };
 
         private class CmdLineParam
@@ -399,7 +517,7 @@ namespace CmdLineEzNs
             public Action<string, object> Store { get; init; }
         }
 
-        private Dictionary<string, object> _values;
+        private readonly Dictionary<string, object> _values;
         private List<CmdLineParam> _params;
         private Dictionary<string, CmdLineParam> _paramsIndexed;
         private Action<List<string>> _remainderAction;
@@ -407,5 +525,9 @@ namespace CmdLineEzNs
         private bool _ignoreCase = true;
         private string _requiredFirst;
         private string _optionalFirst;
+        private readonly IDictionary<string, object> _defaultConfigurationValues;
+        private string _configurationFileNameParameter;
+
+
     }
 }

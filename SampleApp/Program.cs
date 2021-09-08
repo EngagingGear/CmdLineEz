@@ -11,8 +11,11 @@ namespace HelloWorld
             try
             {
                 var cmdLine = new CmdLineEz()
+                    .Config("configFile")
                     .Flag("capitalize")
                     .Param("filename")
+                    .Param("param1")
+                    .Param("param2")
                     .Required("filename")
                     .AllowTrailing();
                 cmdLine.Process(args);
@@ -25,6 +28,8 @@ namespace HelloWorld
                                 streamWriter.WriteLine(item.ToUpper());
                             else
                                 streamWriter.WriteLine(item);
+
+                        streamWriter.WriteLine(cmdLine.ParamVal("param1"));
                     }
                 }
             }
