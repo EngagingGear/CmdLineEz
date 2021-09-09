@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.ComponentModel.Design;
 using System.Dynamic;
 using System.IO;
 using System.Linq;
@@ -56,11 +57,11 @@ namespace CmdLineEzNs
             foreach (var param in _params)
                 _paramsIndexed[param.Name] = param;
 
-            //if configuration file parameter was specified then updated configuration values from that file
+            //Read configuration file parameters if specified
+            var argsList = args.ToList();
             IDictionary<string, object> fileConfigurationValues = new Dictionary<string, object>();
             if (!string.IsNullOrWhiteSpace(_configurationFileNameParameter))
             {
-                var argsList = args.ToList();
                 var parameterIndex = argsList.FindIndex(i => 
                     (i.StartsWith("/") || i.StartsWith("--") || i.StartsWith("-"))
                     &&
@@ -88,6 +89,7 @@ namespace CmdLineEzNs
                 }
             }
 
+            //process configuration file parameters and configuration object parameters
             if (_defaultConfigurationValues?.Count > 0 || fileConfigurationValues?.Count > 0)
             {
                 foreach (var cmdLineParam in _params)
@@ -118,6 +120,37 @@ namespace CmdLineEzNs
                         };
                     }
                 }
+            }
+
+            //if both default value and setter were configured and no parameter value passed in command line
+            //then invoke setter with default value.
+            var passedParameters = argsList
+                .Where(i => i.StartsWith("/") || i.StartsWith("--") || i.StartsWith("-"))
+                .Select(s =>
+                {
+                    var parameterName = s.StartsWith("/") ? s.TrimStart('/').ToLower() : s.TrimStart('-').ToLower();
+                    return parameterName;
+                });
+
+            foreach (var cmdLineParam in _params.Where(
+                p => p.Store != null && _values.ContainsKey(p.Name.ToLower()) && !passedParameters.Contains(p.Name.ToLower())))
+            {
+                cmdLineParam.Store(cmdLineParam.Name, _values[cmdLineParam.Name.ToLower()]);
+            }
+
+            //check for passed duplicates
+            var duplicatedParameters = passedParameters.GroupBy(p => p)
+                .Select(group => new
+                {
+                    Name = group.Key,
+                    Count = group.Count()
+                })
+                .Where(groupDescription => groupDescription.Count > 1)
+                .ToList();
+
+            if (duplicatedParameters.Count > 0)
+            {
+                throw new ArgumentException("Duplicated parameters in command line");
             }
 
             var requiredParams = new HashSet<string>(_params.Where(p => p.Required).Select(p => p.Name));

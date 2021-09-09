@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CmdLineEzNs;
@@ -969,7 +970,6 @@ namespace CmdLinEzTestNs
             const bool configurationFileFlag1 = true;
             const bool configurationFileFlag2 = false;
             const string configurationFileParam1 = "configuration file param value 1";
-            const string configurationFileParam2 = "configuration file param value 2";
             const string configurationFileParam3 = "configuration file param value 3";
             const string configurationFileListValue1 = "configuration file list value 1";
             const string configurationFileListValue2 = "configuration file list value 2";
@@ -1043,6 +1043,64 @@ namespace CmdLinEzTestNs
             Assert.True(CompareList(configurationFileParameterList, cmdLine.ParamListVal("paramlist1")));
         }
 
+        [Fact]
+        public void SetterInvokedWithDefaultValueEvenWhenParameterNotPresentInCommandLine()
+        {
+            var jsonConfiguration =
+                @$"{{
+	            ""pAram1"": ""configuration file param value 1""
+            }}";
+
+            //this values provided by test json
+            const string configurationObjectParam2 = "configuration object param value 2";
+            const string defaultValueParam3 = "default value param 3";
+
+            var configurationFileParameterInvocationCount = 0;
+            var configurationObjectParameterInvocationCount = 0;
+            var defaultParameterInvocationCount = 0;
+            var commandLineParameterInvocationCount = 0;
+
+
+            const string configurationParameterName = "config";
+
+            var defaultConfiguration = new
+            {
+                Param2 = configurationObjectParam2,
+            };
+
+            var cmdLine = new CmdLineEzForTest(jsonConfiguration)
+                .Config(configurationParameterName, defaultConfiguration)
+                .Param("param1", (s, p) => configurationFileParameterInvocationCount++)
+                .Param("param2", (s, p) => configurationObjectParameterInvocationCount++)
+                .Param("param3", (s, p) => defaultParameterInvocationCount++, defaultValueParam3)
+                .Param("param4", (s, p) => commandLineParameterInvocationCount++);
+
+            cmdLine.Process(new[] { "/config", "testfile.json", "/param4", "param 4 value" });
+
+            Assert.Equal(1, configurationFileParameterInvocationCount);
+            Assert.Equal(1, configurationObjectParameterInvocationCount);
+            Assert.Equal(1, defaultParameterInvocationCount);
+            Assert.Equal(1, commandLineParameterInvocationCount);
+        }
+
+        [Fact]
+        public void SetterInvokedOnlyOnceWhenBothDefaultAndCommandLineValueAvailable()
+        {
+            const string defaultValueParam1 = "default value param 1";
+
+            var defaultParameter1InvocationCount = 0;
+            var defaultParameter2InvocationCount = 0;
+
+            var cmdLine = new CmdLineEzForTest()
+                .Param("param1", (s, p) => defaultParameter1InvocationCount++, defaultValueParam1)
+                .Param("param2", (s, p) => defaultParameter2InvocationCount++);
+
+            cmdLine.Process(new[] { "/param1", "param 1 value", "/param2", "param 2 value" });
+
+            Assert.Equal(1, defaultParameter1InvocationCount);
+            Assert.Equal(1, defaultParameter2InvocationCount);
+        }
+
 
         // Utilities
         private bool CompareList(List<string> l1, params string[] compareTo)
@@ -1062,9 +1120,20 @@ namespace CmdLinEzTestNs
 
         public class CmdLineEzForTest : CmdLineEz
         {
+            private readonly string _jsonConfiguration;
+
+            public CmdLineEzForTest() : this(null)
+            {
+            }
+
+            public CmdLineEzForTest(string jsonConfiguration)
+            {
+                _jsonConfiguration = jsonConfiguration;
+            }
+
             protected override string OpenFileAsText(string path)
             {
-                return TestJson;
+                return !string.IsNullOrWhiteSpace(_jsonConfiguration) ? _jsonConfiguration : TestJson;
             }
         }
     }
